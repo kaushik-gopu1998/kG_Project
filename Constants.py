@@ -1,0 +1,13 @@
+FILE_PATH = "C:/Users/ramya/Downloads/learning_concept-to-outcome_rel - learning_concept-to-outcome_rel.csv"
+username = 'neo4j'
+password = 'kgopu1998'
+URI = 'bolt://localhost:7687'
+SEPARATOR = '$'
+LEFT_ENTITY = 'L'
+RIGHT_ENTITY = 'R'
+RELATIONSHIP = 'Rel'
+LABEL = 'label'
+ID ='id'
+EQUALS ='='
+APPEND_R = 'r.+'
+APPEND_L ='l.+'
