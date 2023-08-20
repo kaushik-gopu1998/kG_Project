@@ -1,6 +1,6 @@
-FILE_PATH = "C:/Users/ramya/Downloads/learning_concept-to-outcome_rel - learning_concept-to-outcome_rel.csv"
+FILE_PATH = '<csv_file_path>'
 username = 'neo4j'
-password = 'kgopu1998'
+password = 'password'
 URI = 'bolt://localhost:7687'
 SEPARATOR = '$'
 LEFT_ENTITY = 'L'
