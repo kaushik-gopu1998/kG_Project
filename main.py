@@ -36,12 +36,11 @@ def extract_left_right_relationship_info(data):
 
 
 def is_id_exists(node_id, label):
-    print(node_id+" "+label)
     graph_repo = GraphRepo()
     qb = QueryBuilder()
     query = qb.match().node(labels=label, ref_name='n', properties={Constants.ID: str(node_id)}).return_literal('n')
-    records = graph_repo.execute_query(query)
-    return True
+    records, summary, keys = graph_repo.execute_query(query)
+    return len(records) > 0
 
 
 def create_node(entity):
@@ -57,7 +56,7 @@ def create_node(entity):
             print('executing query...')
             graph_repo.execute_query(query)
         except Exception as e:
-            print("an error occurred while creating a node"+ e)
+            print("an error occurred while creating a node" + e)
 
 
 def construct_kg(l_entity, r_entity, rel_entity):
@@ -68,10 +67,10 @@ def construct_kg(l_entity, r_entity, rel_entity):
     qb = QueryBuilder()
     query_match_left = qb.match() \
         .node(labels=l_label, ref_name='l') \
-        .where('l.'+Constants.ID, Constants.EQUALS, l_entity[Constants.ID])
+        .where('l.' + Constants.ID, Constants.EQUALS, l_entity[Constants.ID])
     query_match_right = qb.match() \
         .node(labels=r_label, ref_name='r') \
-        .where('r.'+Constants.ID, Constants.EQUALS, r_entity[Constants.ID])
+        .where('r.' + Constants.ID, Constants.EQUALS, r_entity[Constants.ID])
     query_create_rel = qb.create() \
         .node(ref_name='l') \
         .related_to(ref_name='rel', label=rel_entity['name']) \
@@ -81,7 +80,7 @@ def construct_kg(l_entity, r_entity, rel_entity):
     try:
         graph_repo.execute_query(final_query)
     except Exception as e:
-        print("an error occurred while creating relationship."+e)
+        print("an error occurred while creating relationship." + e)
 
 
 if __name__ == '__main__':
@@ -89,4 +88,4 @@ if __name__ == '__main__':
     for each_row in formatted_data:
         left_entity, right_entity, relationship_entity = extract_left_right_relationship_info(each_row)
         construct_kg(left_entity, right_entity, relationship_entity)
-        break
+        
