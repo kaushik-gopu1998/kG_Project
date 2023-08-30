@@ -1,0 +1,17 @@
+Neo4J requirements:
+i) neo4j community version : 5.11.0
+ii) neo4J desktop requires JDK 17 runtime environment.
+
+Python Libraries and Requirements:
+i) cymple: library that provides query builder for developing cypher queries effectively.
+ii) neo4j: Provides a driver to communicate with neo4j database.
+
+Input requirements:
+i) As of now the code is accepting only .csv files.
+ii) entity file: The name of the file must begin with "entity_", and followed by the name of the entity, for example, "entity_name_of_the_entity". "name_of_the_entity" will be considered as label name for each entity.
+iii) relation file: The name of the file must begin with "rel-of-entity", and followed by left entity label and right entity label. Example: rel-of-entity_learning_concept-to-entity_learning_outcome
+iv) id column should be unique for each entity.
+
+Output:
+i) for entity file, each row is considered as one entity and stored in database.
+ii) for relation file, relations between nodes are created with given name (equivalent nodes must present in the database before inputting relation file).

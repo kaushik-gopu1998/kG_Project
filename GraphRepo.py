@@ -4,16 +4,17 @@ import Constants
 
 
 class GraphRepo:
-    def __init__(self):
-        self.driver = GraphDatabase.driver(Constants.URI, auth=(Constants.username, Constants.password))
+    driver = GraphDatabase.driver(Constants.URI, auth=(Constants.USERNAME, Constants.PASSWORD))
 
-    def execute_query(self, query):
-        records, summary, keys = self.driver.execute_query(query)
-        self.close_connections()
+    @classmethod
+    def execute_query(cls, query, routing_control='w'):
+        records, summary, keys = cls.driver.execute_query(query_=query, routing_=routing_control)
         return records, summary, keys
 
-    def check_connectivity(self):
-        self.driver.verify_connectivity()
+    @classmethod
+    def check_connectivity(cls):
+        cls.driver.verify_connectivity()
 
-    def close_connections(self):
-        self.driver.close()
+    @classmethod
+    def close_connections(cls):
+        cls.driver.close()
