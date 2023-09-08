@@ -1,4 +1,3 @@
-FILE_PATH = "C:/Users/ramya/Downloads/learning_concept-to-outcome_rel - learning_concept-to-outcome_rel.csv"
 USERNAME = 'neo4j'
 PASSWORD = 'kgopu1998'
 URI = 'bolt://localhost:7687'
@@ -23,5 +22,7 @@ TYPE = 'type'
 FUNCTIONAL = 'FUNCTIONAL'
 INVERSE_FUNCTIONAL = 'INVERSE_FUNCTIONAL'
 HYPHEN = '-'
-READ ='r'
+READ = 'r'
 WRITE = 'w'
+TEST_ENTITY_FILE = 'C:/Users/ramya/Downloads/entity_employee.csv'
+TEST_REL_FILE = 'C:/Users/ramya/Downloads/rel-of-entity_employee-to-entity_dept.csv'
