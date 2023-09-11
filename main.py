@@ -10,64 +10,6 @@ import logging
 from GraphRepo import GraphRepo
 
 
-def insert_relationship_instance(graph_db_driver, subject_entity_name, predict_entity_name, rel_instance_dictionary):
-    try:
-        with graph_db_driver.session(database='neo4j') as session:
-            for rel_instance in rel_instance_dictionary:
-                result = session.execute_write(insert_relation_tx, subject_entity_name, predict_entity_name,
-                                               rel_instance)
-                return result
-    except Exception as ex:
-        logging.exception('exception, %s, occurred while creating relationship' % ex)
-        return False
-
-
-def insert_relation_tx(tx, subject_label, predict_label, relation):
-    is_valid = check_relationship(relation, subject_label, predict_label)
-    if not is_valid:
-        raise Exception('RelationCannotBeFormed')
-    lock = Lock()
-    with lock:
-        try:
-            create_relation_query = create_relationship_helper(subject_label, predict_label, relation)
-            tx.run(create_relation_query)
-            return True
-        except Exception as ex:
-            logging.exception('exception, %s, occurred while creating relationship' % ex)
-            return False
-
-
-def insert_entity_instance(graph_db_driver, entity_name, entity_instance_dictionary):
-    try:
-        with graph_db_driver.session(database='neo4j') as session:
-            for entity in entity_instance_dictionary:
-                result = session.execute_write(insert_entity_tx, entity_name, entity)
-                return result
-    except Exception as ex:
-        logging.exception('exception, %s, occurred while creating node' % ex)
-        return False
-
-
-def insert_entity_tx(tx, entity_name, entity):
-    qb = QueryBuilder()
-    id_match_query = qb.match().node(labels=entity_name, ref_name='n',
-                                     properties={Constants.ID: str(entity[Constants.ID])}).return_literal(
-        'n')
-    result = tx.run(id_match_query)
-    record = result.single()
-    if record is not None:
-        raise Exception("Node ID with given label is already exists in database")
-    lock = Lock()
-    with lock:
-        create_node_query = qb.create().node(labels=entity_name, ref_name='n', properties=entity).return_literal('n')
-        result = tx.run(create_node_query)
-        record = result.single()
-        if record is not None:
-            return True
-        else:
-            return False
-
-
 def extract_data_from_csv(path):
     rows = []
     with open(path, newline='') as csv_file:
@@ -100,7 +42,7 @@ def create_node(node_label, entity_rows):
                 logging.exception("An error, %s, occurred while creating a node." % e)
 
 
-def create_relationship_helper(l_label, r_label, rel_entity):
+def create_relationship_query(l_label, r_label, rel_entity):
     qb = QueryBuilder()
     query_match_left = qb.match() \
         .node(labels=l_label, ref_name='l') \
@@ -177,7 +119,7 @@ def create_relationship(relation_rows, subject_label, predict_label):
             failure += 1
         else:
             try:
-                query = create_relationship_helper(subject_label, predict_label, parsed_relation)
+                query = create_relationship_query(subject_label, predict_label, parsed_relation)
                 GraphRepo.execute_query(query, routing_control=Constants.WRITE)
             except Exception as ex:
                 logging.exception(
