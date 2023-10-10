@@ -4,11 +4,11 @@ import Constants
 
 
 class GraphRepo:
-    driver = GraphDatabase.driver(Constants.URI, auth=(Constants.USERNAME, Constants.PASSWORD))
+    driver = GraphDatabase.driver(Constants.URI, auth=('neo4j', 'kgopu1998'))
 
     @classmethod
-    def execute_query(cls, query, routing_control='w'):
-        records, summary, keys = cls.driver.execute_query(query_=query, routing_=routing_control)
+    def execute_query(cls, query):
+        records, summary, keys = cls.driver.execute_query(query_=query)
         return records, summary, keys
 
     @classmethod
