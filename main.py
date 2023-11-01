@@ -288,7 +288,7 @@ def create_student_learn_gain_rel(student_props, learn_gain_props):
 
 def insert_learning_gain(entry_file, exit_file, answers_for_tickets):
     entry_data = extract_data_from_csv(entry_file)  # parse entry data
-    exit_data = extract_data_from_csv(exit_file)    # parse exit data
+    exit_data = extract_data_from_csv(exit_file)  # parse exit data
     answers_data = extract_data_from_csv(answers_for_tickets)  # parse answers data
     entry_file_name = get_file_name(entry_file)
     exit_file_name = get_file_name(exit_file)
@@ -330,7 +330,193 @@ def insert_learning_gain(entry_file, exit_file, answers_for_tickets):
         except Exception as ex:
             logging.exception(ex)
         else:
-            create_student_learn_gain_rel(student_props, learn_gain_props)  # create student , learn gain and relation between student and learn gain
+            create_student_learn_gain_rel(student_props,
+                                          learn_gain_props)  # create student , learn gain and relation between student and learn gain
+
+
+def get_post_score(exit_data, id):
+    for post_data in exit_data:
+        if post_data[Constants.ID] == id:
+            return post_data[Constants.POINTS]
+    return -1.0
+
+
+def create_ticket_id(entry_file_name):
+    # entryticketsessionw6a format
+    name_split = entry_file_name.split(" ")
+    ticket_id = ''
+    for name in name_split:
+        if str(name).lower() == 'exit' or str(name).lower() == 'entry':
+            ticket_id += str(name).lower()
+        if str(name).lower() == 'ticket':
+            ticket_id += str(name).lower()
+        if str(name).lower() == 'session':
+            ticket_id += str(name).lower()
+        if str(name).lower().startswith('w'):
+            ticket_id += str(name).lower()
+    return ticket_id
+
+
+def create_student_learn_gain_kg_ticket_rel(student_props, learn_gain_props, entry_id, exit_id):
+    create_single_node('Student', student_props)
+    if not is_id_exists(entry_id, 'Knowledge_Ticket'):
+        print('entry id does not exists in database')
+        return
+    qb = QueryBuilder()
+    # get student node
+    query_node_1 = qb.match() \
+        .node(labels='Student', ref_name='s') \
+        .where('s.' + Constants.ID, Constants.EQUALS,
+               student_props[Constants.ID])
+    # get outcome node
+    query_node_3 = qb.match() \
+        .node(labels='Knowledge_Ticket', ref_name='en') \
+        .where('en.' + Constants.ID, Constants.EQUALS,
+               entry_id)
+    # create relation: knowledge_ticket->session<->learning_outcome
+    query_node_4 = qb.create() \
+        .node(ref_name='s') \
+        .related_to(ref_name='rel', label='HAS_LEARN_GAIN') \
+        .node(ref_name='l') \
+        .related_to(ref_name="rel2", label='BELONGS_TO_TICKET') \
+        .node(ref_name='en')
+    # create learn gain node
+    query_node_2 = qb.create() \
+        .node(labels='Learn_Gain', ref_name='l', properties=learn_gain_props)
+    final_query = query_node_1 + query_node_3 + query_node_2 + query_node_4
+    try:
+        # run query
+        GraphRepo.execute_query(final_query)
+    except Exception as e:
+        logging.exception("An error, %s, occurred while creating a node." % e)
+
+
+def insert_learning_gain_new(entry_file, exit_file):
+    entry_data = extract_data_from_csv(entry_file)  # parse entry data
+    exit_data = extract_data_from_csv(exit_file)  # parse exit data
+    entry_file_name = get_file_name(entry_file)
+    exit_file_name = get_file_name(exit_file)
+    for pre_data in entry_data:
+        student_id = pre_data[Constants.ID]  # extract student id
+        student_name = pre_data[Constants.NAME]  # extract student name
+        pre_score = float(pre_data[Constants.POINTS])  # extract pre score
+        post_score = float(get_post_score(exit_data, student_id))  # extract post score
+        if post_score == -1.0:  # this means student doesn't participate in post survey quiz
+            continue
+        print("pre score")
+        print(pre_score)
+        print("post score")
+        print(post_score)
+        abs_gain = get_abs_gain(pre_score, post_score)  # compute abs
+        norm_gain_one = get_norm_gain(pre_score, post_score, Constants.NORM_ONE)  # compute norm 1
+        norm_gain_two = get_norm_gain(pre_score, post_score, Constants.NORM_TWO)  # compute norm 2
+        sym_gain_two = get_sym_gain(pre_score, post_score, Constants.SYM_ONE)  # compute sym 2
+        wt_gain = get_wt_gain(pre_score, post_score)  # compute weight gain
+        learn_gain_props = {Constants.ABS_GAIN: abs_gain, Constants.NORM_GAIN_ONE: norm_gain_one,
+                            Constants.NORM_GAIN_TWO: norm_gain_two, Constants.SYM_GAIN_TWO: sym_gain_two,
+                            Constants.WT_GAIN: wt_gain}
+        student_props = get_student_props(student_id, student_name)  # get student properties such as name, id
+        entry_id = create_ticket_id(entry_file_name)
+        exit_id = create_ticket_id(exit_file_name)
+        print('exit id = ' + exit_id)
+        print('entry id = ' + entry_id)
+        try:
+            GraphRepo.check_connectivity()  # check database connection
+        except Exception as ex:
+            logging.exception(ex)
+        else:
+            create_student_learn_gain_kg_ticket_rel(student_props,
+                                                    learn_gain_props, entry_id,
+                                                    exit_id)  # create student , learn gain and relation between student and learn gain
+
+
+def create_session_id(ticket, ticket_title):
+    session_id = ""
+    session = ticket.get(Constants.Session, "")
+    week = ticket.get(Constants.WEEK, -1)
+    if str(ticket_title).startswith(Constants.ENTRY):
+        session_id = Constants.ENTRY + "-" + week + session  # ex: entry_5A
+    elif str(ticket_title).startswith(Constants.EXIT):
+        session_id = Constants.EXIT + "-" + week + session
+    return session_id
+
+
+def create_relation_ticket_and_session_and_outcome_question(ticket, session_props, outcome_props, question_props):
+    qb = QueryBuilder()
+    # get ticket node
+    query_node_1 = qb.match() \
+        .node(labels='Knowledge_Ticket', ref_name='k') \
+        .where('k.' + Constants.ID, Constants.EQUALS,
+               ticket[Constants.TICKET_TITLE])
+    # get session node
+    query_node_2 = qb.match() \
+        .node(labels='Session', ref_name='s') \
+        .where('s.' + Constants.ID, Constants.EQUALS, session_props[Constants.ID])
+    # get outcome node
+    query_node_3 = qb.match() \
+        .node(labels='Learning_Outcome', ref_name='o') \
+        .where('o.' + Constants.ID, Constants.EQUALS,
+               outcome_props[Constants.ID])
+    # get question node
+    query_node_4 = qb.match() \
+        .node(labels='Question', ref_name='q') \
+        .where('q.' + Constants.ID, Constants.EQUALS,
+               question_props[Constants.ID])
+    # create relation: knowledge_ticket->session<->learning_outcome
+    query_node_5 = qb.create() \
+        .node(ref_name='k') \
+        .related_to(ref_name='rel', label='BELONGS_TO') \
+        .node(ref_name='s') \
+        .related_to(ref_name="rel2", label='HAS_OUTCOME') \
+        .node(ref_name='o') \
+        .related_to(ref_name='rel3', label='IS_ASSESSED_BY') \
+        .node(ref_name='q') \
+        .related_to(ref_name='rel4', label='ASSESSES') \
+        .node(ref_name='o')
+    final_query = query_node_1 + query_node_2 + query_node_3 + query_node_4 + query_node_5
+    try:
+        # run query
+        GraphRepo.execute_query(final_query)
+    except Exception as e:
+        logging.exception("An error, %s, occurred while creating a node." % e)
+
+
+def parse_ticket(ticket):
+    for key, val in ticket.items():
+        ticket[key] = parse(val)
+
+
+def filter_ticket(ticket):
+    ticket.pop(Constants.OUTCOMES)
+    ticket_copy = dict(ticket).copy();
+    for key, val in ticket_copy.items():
+        if str(key).startswith("Q"):
+            ticket.pop(key)
+
+
+def insert_ticket_session_and_outcomes(ticket_file):
+    tickets_data = extract_data_from_csv(ticket_file)
+    for ticket in tickets_data:
+        parse_ticket(ticket)
+        ticket_title = ticket[Constants.TICKET_TITLE]
+        session_id = create_session_id(ticket, ticket_title)
+        outcomes = ticket[Constants.OUTCOMES]
+        ticket[Constants.ID] = ticket_title
+        session_props = {Constants.ID: session_id}  # session node props
+        outcome_props = {Constants.OUTCOMES: outcomes, Constants.ID: session_id}  # outcome node props
+        question_props = {Constants.ID: session_id, Constants.QUESTION: ticket[Constants.QUESTION]}
+        filter_ticket(ticket)  # remove unwanted data such as outcomes and questions
+        print("session props : %s" % session_props)
+        print("ticket props : %s" % ticket)
+        print("outcome props : %s" % outcome_props)
+        print("question props : %s" % question_props)
+        print(
+            "*******************************************************************end of one record***************************************************************************" + "\n")
+        create_single_node('Knowledge_Ticket', ticket)  # creating node for ticket
+        create_single_node('Session', session_props)  # creating node for session
+        create_single_node('Learning_Outcome', outcome_props)  # creating node for outcome
+        create_single_node(Constants.QUESTION, question_props)  # creating node for question
+        create_relation_ticket_and_session_and_outcome_question(ticket, session_props, outcome_props, question_props)
 
 
 def get_file_name(file_path):
@@ -339,15 +525,27 @@ def get_file_name(file_path):
     return file_name
 
 
-def test_learning():
+def input_learning_gain():
     entry_file = input('enter input file')
     exit_file = input('enter exit file')
     answers_for_tickets = input('enter answers for tickets')
     insert_learning_gain(str(entry_file), str(exit_file), str(answers_for_tickets))
 
 
+def input_answers_for_tickets():
+    ans_file = input('enter input file')
+    insert_ticket_session_and_outcomes(ans_file)
+
+
+def input_new_learn_gain():
+    entry_file = input('entry file')
+    exit_file = input('exit_file')
+    insert_learning_gain_new(entry_file, exit_file)
+
+
 if __name__ == '__main__':
-    test_learning()
+    # input_answers_for_tickets()
+    input_new_learn_gain()
     exit(0)
     file_path = input('Enter the path of the file- do not enclose path in single/double quotes: ')
     file_name = os.path.basename(file_path)
