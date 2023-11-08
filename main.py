@@ -12,7 +12,7 @@ from GraphRepo import GraphRepo
 
 def extract_data_from_csv(path):
     rows = []
-    with open(path, newline='') as csv_file:
+    with open(path, newline='', errors='ignore') as csv_file:
         data = csv.DictReader(csv_file)
         for row in data:
             rows.append(row)
@@ -277,7 +277,7 @@ def create_student_learn_gain_rel(student_props, learn_gain_props):
         .node(labels='Learn_Gain', ref_name='r', properties=learn_gain_props)
     query_create_rel = qb.create() \
         .node(ref_name='l') \
-        .related_to(ref_name='rel', label='Has_Learn_Gain') \
+        .related_to(ref_name='rel', label='HAS_LEARN_GAIN') \
         .node(ref_name='r')
     final_query = query_left + query_right + query_create_rel
     try:
@@ -355,6 +355,136 @@ def create_ticket_id(entry_file_name):
         if str(name).lower().startswith('w'):
             ticket_id += str(name).lower()
     return ticket_id
+
+
+def get_all_questions(data):
+    questions = {}
+    for key, val in data.items():
+        if str(key).startswith('question'):
+            arr = key.split(':')
+            questions[arr[1]] = {Constants.ID: arr[1], Constants.QUESTION: arr[2]}
+    return questions
+
+
+def get_assesment_id(file_name):
+    split = file_name.split('-')
+    print(split)
+    for sp in split:
+        if str(sp).lower().startswith(Constants.QUIZ):
+            return str(sp).lower()
+    return ""
+
+
+def get_course_instance(data):
+    for key, val in data.items():
+        if key == Constants.SECTION:
+            return val
+
+
+def create_relation_instance_assessment_question(instance_props, assessment_props, all_questions):
+    qb = QueryBuilder()
+    query_instance = qb.match() \
+        .node(labels=Constants.COURSE_INSTANCE, ref_name='i').where('i.' + Constants.ID, Constants.EQUALS,
+                                                                    instance_props[Constants.ID])
+    query_assessment = qb.match() \
+        .node(labels=Constants.ASSESSMENT, ref_name='a').where('a.' + Constants.ID, Constants.EQUALS,
+                                                               assessment_props[Constants.ID])
+    query_create_rel = qb.create() \
+        .node(ref_name='i') \
+        .related_to(ref_name='rel', label='Has_Assessment_Question') \
+        .node(ref_name='a')
+    final_query = query_instance + query_assessment + query_create_rel
+    try:
+        GraphRepo.execute_query(query=final_query)
+    except:
+        logging.error('an error occurred while inserting student-learn gain')
+    else:
+        for key, question_props in all_questions.items():
+            query_instance = qb.match() \
+                .node(labels=Constants.COURSE_INSTANCE, ref_name='i').where('i.' + Constants.ID, Constants.EQUALS,
+                                                                            instance_props[Constants.ID])
+            query_question = qb.create() \
+                .node(labels=Constants.QUESTION, ref_name='q', properties=question_props)
+
+            query_create_rel = qb.create() \
+                .node(ref_name='i') \
+                .related_to(ref_name='rel', label='Has_Assessment_Question') \
+                .node(ref_name='q')
+            final_query = query_instance + query_question + query_create_rel
+            try:
+                GraphRepo.execute_query(query=final_query)
+            except:
+                print('question : ' + key + ' not inserted')
+
+
+def create_relation_instance_student(instance_props, student_props):
+    create_single_node('Student', student_props)
+    qb = QueryBuilder()
+    query_instance = qb.match() \
+        .node(labels=Constants.COURSE_INSTANCE, ref_name='i', properties=instance_props).where('i.' + Constants.ID,
+                                                                                               Constants.EQUALS,
+                                                                                               instance_props[
+                                                                                                   Constants.ID])
+    query_student = qb.match() \
+        .node(labels='Student', ref_name='s').where('s.' + Constants.ID, Constants.EQUALS,
+                                                    student_props[Constants.ID])
+    query_create_rel_1 = qb.create() \
+        .node(ref_name='s') \
+        .related_to(ref_name='rel1', label='enrolled_in') \
+        .node(ref_name='i')
+    query_create_rel_2 = qb.create() \
+        .node(ref_name='i') \
+        .related_to(ref_name='rel2', label='enrolled_by') \
+        .node(ref_name='s')
+    final_query = query_student + query_instance + query_create_rel_1 + query_create_rel_2
+    try:
+        GraphRepo.execute_query(query=final_query)
+    except Exception as ex:
+        print(ex)
+
+
+def insert_course_instance_assessment_question(assessment_file):
+    name = os.path.basename(assessment_file)
+    name, ext = name.split(Constants.DOT)
+    assessment_id = get_assesment_id(name)
+    assessment_data = extract_data_from_csv(assessment_file)
+    print('assessment_id = ' + assessment_id)
+    all_questions = {}
+    for data in assessment_data:
+        all_questions = get_all_questions(data)
+        course_instance = get_course_instance(data)
+        break
+    print(all_questions)
+    print('instance :' + course_instance + ' creating....')
+    instance_props = {Constants.ID: course_instance}
+    create_single_node(Constants.COURSE_INSTANCE, instance_props)
+    print('creating instances for questions.....')
+    for key, val in all_questions.items():
+        question_props = val
+        print('question props...')
+        print(question_props)
+        create_single_node(Constants.QUESTION, question_props)
+    print('Creating instances for assessment')
+    assessment_props = {Constants.ID: assessment_id}
+    create_single_node(Constants.ASSESSMENT, assessment_props)
+    create_relation_instance_assessment_question(instance_props, assessment_props, all_questions)
+    for data in assessment_data:
+        print('************extracting student information*************')
+        student_name = data['name']
+        student_id = data['id']
+        student_props = {Constants.ID: student_id, Constants.NAME: student_name}
+        section_instance = data[Constants.COURSE]
+        score = data[Constants.SCORE]
+        print('student_name :' + student_name)
+        print('student_id: ' + student_id)
+        print('section_instance: ' + section_instance)
+        print("score: " + score)
+        create_relation_instance_student(instance_props, student_props)
+
+
+def assessment_input():
+    ass_file = input('enter assessment file')
+    insert_course_instance_assessment_question(ass_file)
 
 
 def create_student_learn_gain_kg_ticket_rel(student_props, learn_gain_props, entry_id, exit_id):
@@ -517,13 +647,12 @@ def insert_ticket_session_and_outcomes(ticket_file):
         create_single_node('Learning_Outcome', outcome_props)  # creating node for outcome
         create_single_node(Constants.QUESTION, question_props)  # creating node for question
         create_relation_ticket_and_session_and_outcome_question(ticket, session_props, outcome_props, question_props)
-
-
 def get_file_name(file_path):
     file_name = os.path.basename(file_path)
     file_name, extension = file_name.split(Constants.DOT)
     return file_name
 
+def get_feedback(course_id, student_id):
 
 def input_learning_gain():
     entry_file = input('enter input file')
@@ -545,7 +674,8 @@ def input_new_learn_gain():
 
 if __name__ == '__main__':
     # input_answers_for_tickets()
-    input_new_learn_gain()
+    # input_new_learn_gain()
+    # assessment_input()
     exit(0)
     file_path = input('Enter the path of the file- do not enclose path in single/double quotes: ')
     file_name = os.path.basename(file_path)
