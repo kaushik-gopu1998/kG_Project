@@ -1,6 +1,6 @@
 # This is a sample Python script.
 from threading import Lock
-
+import statistics
 import Constants
 import csv
 from cymple import QueryBuilder
@@ -8,6 +8,10 @@ import os
 import logging
 import re
 from GraphRepo import GraphRepo
+
+
+def quote_value(value):
+    return "'" + value + "'"
 
 
 def extract_data_from_csv(path):
@@ -647,12 +651,205 @@ def insert_ticket_session_and_outcomes(ticket_file):
         create_single_node('Learning_Outcome', outcome_props)  # creating node for outcome
         create_single_node(Constants.QUESTION, question_props)  # creating node for question
         create_relation_ticket_and_session_and_outcome_question(ticket, session_props, outcome_props, question_props)
+
+
 def get_file_name(file_path):
     file_name = os.path.basename(file_path)
     file_name, extension = file_name.split(Constants.DOT)
     return file_name
 
-def get_feedback(course_id, student_id):
+
+def get_student_learn_gain(course_id, session_id, student_id):
+    """
+     MATCH (c:Course_Instance)-[r:HAS_STUDENTS]->(s:Student)-[h:HAS_LEARN_GAIN]->(l:Learn_Gain)
+     WHERE c.id = course_id AND s.id = student_id  AND l.entry_id=session_id
+     RETURN l.abs_gain
+    """
+    qb = QueryBuilder()
+    query = qb.match() \
+        .node(labels=Constants.COURSE_INSTANCE, ref_name='course') \
+        .related_to(ref_name='r1', label='HAS_STUDENTS') \
+        .node(labels=Constants.STUDENT, ref_name='student') \
+        .related_to(ref_name='r2', label=Constants.STU_LG_REL) \
+        .node(ref_name='learn_gain', labels=Constants.LEARN_GAIN) \
+        .where_literal(
+        'course.id = ' + quote_value(course_id) + ' AND student.id = ' + quote_value(
+            student_id) + ' AND learn_gain.entry_id = ' + quote_value(
+            session_id)).return_literal('learn_gain.abs_gain as gain')
+    print('executing query.....' + str(query))
+    try:
+        records, summary, keys = GraphRepo.execute_query(query)
+        for record in records:
+            return record['gain']
+    except Exception as e:
+        logging.exception("An error, %s, occurred while creating a node." % e)
+    return None
+
+
+def get_session_learn_gains(course_id, session_id):
+    """
+    MATCH (course: Course_Instance)-[r1: HAS_STUDENTS]->(student: Student)-[r2: HAS_LEARN_GAIN]->(learn_gain: Learn_Gain)
+    WHERE course.id =<course_id> AND learn_gain.entry_id=<session_id>
+    RETURN learn_gain.abs_gain
+    """
+    qb = QueryBuilder()
+    gains = []
+    query = qb.match() \
+        .node(labels=Constants.COURSE_INSTANCE, ref_name='course') \
+        .related_to(ref_name='r1', label='HAS_STUDENTS') \
+        .node(labels=Constants.STUDENT, ref_name='student') \
+        .related_to(ref_name='r2', label=Constants.STU_LG_REL) \
+        .node(ref_name='learn_gain', labels=Constants.LEARN_GAIN) \
+        .where_literal(
+        'course.id = ' + quote_value(course_id) + ' AND learn_gain.entry_id = ' + quote_value(
+            session_id)).return_literal(
+        'learn_gain.abs_gain as gain')
+    print('executing query.....' + str(query))
+    try:
+        records, summary, keys = GraphRepo.execute_query(query)
+        for record in records:
+            gains.append(record['gain'])
+    except Exception as e:
+        logging.exception("An error, %s, occurred while creating a node." % e)
+    return gains
+
+
+def get_feedback(course_id, student_id, session_id):  # change it to learning gain feedback
+    student_learn_gain = get_student_learn_gain(course_id, session_id,
+                                                student_id)  # get student learn gain for the given session
+    session_learn_gains = get_session_learn_gains(course_id,
+                                                  session_id)  # get all learn gains of the student for the given session
+    if student_learn_gain is None or session_learn_gains is None:
+        return Constants.DATA_NOT_EXISTS_IN_DATABASE
+    print('********************************Data retrieved from database**********************')
+    print(student_learn_gain)
+    print(session_learn_gains)
+    print('*********************************************************************************')
+    mean = statistics.mean(session_learn_gains)
+    standard_deviation = statistics.stdev(session_learn_gains)
+    print('mean = ' + str(mean))
+    print('SD = ' + str(standard_deviation))
+    if student_learn_gain > mean + (3 * standard_deviation):
+        return 'feedback_one'
+    if student_learn_gain > mean + (2 * standard_deviation):
+        return 'feedback_two'
+    if student_learn_gain > mean + standard_deviation:
+        return 'feedback_three'
+    if student_learn_gain > mean - (3 * standard_deviation):
+        return 'feedback_four'
+    return 'feedback_five'
+
+
+def get_meta_data(grades):
+    for grade in grades:
+        for key, val in grade.items():
+            if val == 'meta_data':
+                return grade
+
+
+def get_canvas_id_and_title(val):
+    split = list(val.split(':'))
+    id = split.pop()
+    title = str()
+    for t in split:
+        title = title + t + '_'
+    title = title[:-1]
+    id = id[1:]
+    id = id[:-1]
+    return id, title
+
+
+def insert_assessment_data(meta_data):
+    """
+       attributes: id (canvas_item_id), title (canvas_item_title), points (points)
+    """
+    avoid_list = ['Student', 'SIS Login ID', 'Section']
+    for key, val in meta_data.items():
+        if key in avoid_list:
+            continue
+        canvas_id, canvas_title = get_canvas_id_and_title(key)
+        points = val
+        assessment_props = {Constants.ID: canvas_id, Constants.CANVAS_TITLE: canvas_title, Constants.POINTS: points}
+        try:
+            create_single_node(Constants.ASSESSMENT, assessment_props)
+        except Exception as ex:
+            logging.error('error occurred while inserting assessment entity')
+
+
+def get_id_by_name(name):
+    qb = QueryBuilder()
+    query = qb.match(). \
+        node(Constants.STUDENT, ref_name='s'). \
+        where('s.name', Constants.EQUALS, name). \
+        return_literal('s.id as id')
+    try:
+        records, summary, keys = GraphRepo.execute_query(query)
+        for record in records:
+            return record['id']
+    except Exception as e:
+        logging.exception("An error, %s, occurred while creating a node." % e)
+    return None
+
+
+def format_student_name(name):
+    split_name = name.split(",")
+    split_name[0] = split_name[0].strip()
+    split_name[1] = split_name[1].strip()
+    return split_name[1] + ' ' + split_name[0]
+
+
+def create_relation_student_submission_assessment(student_id, canvas_id, submission_props):
+    qb = QueryBuilder()
+    query_submission_create = qb. \
+        create(). \
+        node(labels='Submission', ref_name='sub', properties=submission_props)  # create query to insert submission data
+    query_student_match = qb. \
+        match(). \
+        node(Constants.STUDENT, ref_name='student'). \
+        where('student.' + Constants.ID, Constants.EQUALS,
+              student_id)  # since student data already exists in KG, using match query to retrieve the given student
+    query_assessment_match = qb. \
+        match(). \
+        node(Constants.ASSESSMENT, ref_name='assessment'). \
+        where('assessment.' + Constants.ID, Constants.EQUALS,
+              canvas_id)  # since assessment data already exists in KG, using match query to retrieve the given assessment
+    query_relation = qb.create(). \
+        node(ref_name='student'). \
+        related_to(label='HAS_A_SUBMISSION', ref_name='rel1'). \
+        node(ref_name='sub'). \
+        related_to(label='BELONGS_TO_ASSESSMENT', ref_name='rel2'). \
+        node(ref_name='assessment'). \
+        related_to(label='BELONGS_TO_SUBMISSION', ref_name='rel3'). \
+        node(ref_name='sub')  # query to create relation between student->submission<->assessment relation
+    aggregate_query = query_student_match + query_assessment_match + query_submission_create + query_relation  # aggregating previously defined queries into one
+    try:
+        GraphRepo.execute_query(aggregate_query)
+    except Exception as ex:
+        logging.exception("An error, %s, occurred while creating a student->submission<->assessment relation." % ex)
+
+
+def student_submission_assessment(grades_file):
+    grades = extract_data_from_csv(grades_file)
+    meta_data = get_meta_data(grades)  # second row of the grades data contains metadata
+    insert_assessment_data(meta_data)  # inserts metadata into the knowledge graph
+    avoid_list = ['Student', 'SIS Login ID', 'Section']  # Since I only require scores, avoiding other columns
+    for grade in grades:
+        if grade[Constants.STUDENT] == 'meta_data':  # avoiding metadata row as the insertion was already performed
+            continue
+        student_id = get_id_by_name(
+            format_student_name(grade[Constants.STUDENT]))  # extracting id from student firstname and lastname
+        for key, val in grade.items():
+            if key in avoid_list:
+                continue
+            canvas_id, canvas_title = get_canvas_id_and_title(key)  # extracting canvas_id and canvas_title
+            score = 0
+            if val:  # if score exists, type cast it to float. otherwise, score remains zero
+                score = float(val)
+            submission_props = {Constants.ID: canvas_id,
+                                Constants.SCORE: score}  # constructing submission props
+            create_relation_student_submission_assessment(student_id, canvas_id,
+                                                          submission_props)  # function creates student->submission->assessment relation
+
 
 def input_learning_gain():
     entry_file = input('enter input file')
@@ -672,10 +869,17 @@ def input_new_learn_gain():
     insert_learning_gain_new(entry_file, exit_file)
 
 
+def student_submission_assessment_input():
+    file = input('file')
+    student_submission_assessment(file)
+
+
 if __name__ == '__main__':
     # input_answers_for_tickets()
     # input_new_learn_gain()
     # assessment_input()
+    student_submission_assessment_input()
+    # print(get_feedback('221524', '239120', 'w5b entry'))
     exit(0)
     file_path = input('Enter the path of the file- do not enclose path in single/double quotes: ')
     file_name = os.path.basename(file_path)
