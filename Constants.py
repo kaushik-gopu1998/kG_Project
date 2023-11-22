@@ -66,3 +66,9 @@ AND = 'AND'
 DATA_NOT_EXISTS_IN_DATABASE = 'The given data bot exists in the database'
 CANVAS_TITLE = 'canvas_title'
 POINTS = 'points'
+SCORING_SCHEMA = {'Reading': 0.2,
+                  'Quiz': 0.1,
+                  'Lab': 0.2,
+                  'Project': 0.2,
+                  'Exam': 0.2,
+                  'Misc': 0.1}

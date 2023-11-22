@@ -8,6 +8,7 @@ import os
 import logging
 import re
 from GraphRepo import GraphRepo
+import matplotlib.pyplot as plt
 
 
 def quote_value(value):
@@ -874,12 +875,139 @@ def student_submission_assessment_input():
     student_submission_assessment(file)
 
 
+def add_schema_type_to_assessment(file):
+    rows = extract_data_from_csv(file)
+    for row in rows:
+        assessment = row['assessment']
+        type = row['type']
+        id, title = get_canvas_id_and_title(assessment)
+        Qb = QueryBuilder()
+        query = Qb.match().node(labels='ASSESSMENT', properties={Constants.ID: id}, ref_name='a').set(
+            properties={"a.type": type})
+        try:
+            GraphRepo.execute_query(query)
+        except Exception as ex:
+            print(str(ex))
+
+
+def input_add_schema_type_to_assessment():
+    file = input('file')
+    add_schema_type_to_assessment(file)
+
+
+def get_student_scores_by_type(student, schema_type):
+    qb = QueryBuilder()
+    query = qb.match(). \
+        node(labels=Constants.STUDENT, properties={Constants.ID: student}, ref_name='stu'). \
+        related_to(label="HAS_A_SUBMISSION", ref_name='r1'). \
+        node(labels='Submission', ref_name='sub'). \
+        related_to(label='BELONGS_TO_ASSESSMENT', ref_name='r2'). \
+        node(labels='ASSESSMENT', ref_name='a'). \
+        where('a.type', Constants.EQUALS, schema_type).return_literal('sub.score as score')
+    records, summary, keys = GraphRepo.execute_query(query)
+    scores = []
+    for record in records:
+        scores.append(record['score'])
+    return scores
+
+
+def get_assessment_scores_by_type(schema_type):
+    qb = QueryBuilder()
+    query = qb.match().node(labels='ASSESSMENT', ref_name='a').where('a.type', Constants.EQUALS,
+                                                                     schema_type).return_literal('a.points as points')
+    records, summary, keys = GraphRepo.execute_query(query)
+    points = []
+    for record in records:
+        points.append(record['points'])
+    return points
+
+
+def perform_sum(scores):
+    sum = 0.0
+    for score in scores:
+        sum += float(score)
+    return sum
+
+
+def get_students():
+    qb = QueryBuilder()
+    query = qb.match().node(labels='Student', ref_name='s').return_literal('s.id as id')
+    records, summary, keys = GraphRepo.execute_query(query)
+    students = []
+    for record in records:
+        students.append(record['id'])
+    return students
+
+
+def compute_learn_gain(student):
+    qb = QueryBuilder()
+    query = qb.match() \
+        .node(labels='Student', ref_name='s', properties={Constants.ID: student}). \
+        related_to(label='HAS_LEARN_GAIN', ref_name='r'). \
+        node(labels='Learn_Gain', ref_name='l').return_literal('l.abs_gain as gain')
+    records, summary, keys = GraphRepo.execute_query(query)
+    learn_gain = 0.0
+    for record in records:
+        learn_gain += record['gain']
+    return learn_gain
+
+
+def generate_plot_one(target_student):
+    students = get_students()
+    x = []
+    y = []
+    colors = []
+    for student in students:
+        learn_gain = compute_learn_gain(student)
+        performance = measure_student_performance(student)
+        x.append(learn_gain)
+        y.append(performance)
+        if student == target_student:
+            colors.append('red')
+        else:
+            colors.append('gray')
+    plt.scatter(x, y, c=colors)
+    plt.xlabel("Learn Gain")
+    plt.ylabel("Performance")
+    plt.show()
+
+
+def measure_student_performance(student):
+    student_scores = {}  # {type: <total_score>}
+    assessment_points = {}  # {type: <total_points>}
+    for schema_type, weight in Constants.SCORING_SCHEMA.items():
+        student_scores[schema_type] = 0  # initialising to zero
+        assessment_points[schema_type] = 0  # initialising to zero
+        student_scores_for_schema_type = get_student_scores_by_type(student,
+                                                                    schema_type)  # retrieving student scores of the given schema type
+        assessment_points_for_schema_type = get_assessment_scores_by_type(
+            schema_type)  # retrieving total points of the given schema type
+        student_scores[schema_type] = perform_sum(student_scores_for_schema_type)  # compute sum
+        assessment_points[schema_type] = perform_sum(assessment_points_for_schema_type)  # compute sum
+    performances = {}
+    for schema_type, weight in Constants.SCORING_SCHEMA.items():
+        performance = 0.0
+        if assessment_points[schema_type] != 0.0:
+            performance = (student_scores[schema_type] / assessment_points[schema_type]) * (
+                    weight * 100)  # compute performance for each schema type
+        performances[schema_type] = performance
+    # print(performances)
+    total = 0
+    for performance in performances.values():
+        total += performance
+    # print("overall performance : " + str(total))
+    return total
+
+
 if __name__ == '__main__':
     # input_answers_for_tickets()
     # input_new_learn_gain()
     # assessment_input()
-    student_submission_assessment_input()
+    # student_submission_assessment_input()
     # print(get_feedback('221524', '239120', 'w5b entry'))
+    # input_add_schema_type_to_assessment()
+    # measure_student_performance("240377")
+    generate_plot_one("240377")
     exit(0)
     file_path = input('Enter the path of the file- do not enclose path in single/double quotes: ')
     file_name = os.path.basename(file_path)
