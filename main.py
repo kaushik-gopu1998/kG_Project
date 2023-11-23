@@ -49,7 +49,7 @@ def create_node(node_label, entity_rows):
     for entity in entity_rows:
         if not is_id_exists(entity[Constants.ID], node_label):
             qb = QueryBuilder()
-            query = qb.create().node(labels=label, properties=entity)
+            query = qb.create().node(labels=node_label, properties=entity)
             logging.info("executing query %s" % query)
             try:
                 GraphRepo.execute_query(query)
@@ -169,7 +169,7 @@ def insert_student_feedback(feedback_file):
         query = qb.create().node(labels=Constants.KNOWLEDGE_TICKET, properties=entity_row)
         try:
             GraphRepo.execute_query(query)
-        except ex:
+        except Exception as ex:
             logging.exception("an exception, %s, occurred while executing the query" % ex)
 
 
@@ -273,20 +273,24 @@ def get_student_props(student_id, student_name):
     return student_dict
 
 
-def create_student_learn_gain_rel(student_props, learn_gain_props):
+def create_student_learn_gain_rel(course_props, student_props, learn_gain_props):
     create_single_node('Student', student_props)
     qb = QueryBuilder()
+    query_course = qb.match() \
+        .node(labels='Course_Instance', ref_name='c', properties=course_props)
     query_left = qb.match() \
         .node(labels='Student', ref_name='l').where('l.' + Constants.ID, Constants.EQUALS, student_props[Constants.ID])
     query_right = qb.create() \
         .node(labels='Learn_Gain', ref_name='r', properties=learn_gain_props)
     query_create_rel = qb.create() \
+        .node(ref_name='c') \
+        .related_to(ref_name='hs', label='HAS_STUDENTS') \
         .node(ref_name='l') \
         .related_to(ref_name='rel', label='HAS_LEARN_GAIN') \
         .node(ref_name='r')
-    final_query = query_left + query_right + query_create_rel
+    final_query = query_course + query_left + query_right + query_create_rel
     try:
-        GraphRepo.execute_query(query=final_query)
+        GraphRepo.execute_query(final_query)
     except:
         logging.error('an error occurred while inserting student-learn gain')
 
@@ -297,6 +301,7 @@ def insert_learning_gain(entry_file, exit_file, answers_for_tickets):
     answers_data = extract_data_from_csv(answers_for_tickets)  # parse answers data
     entry_file_name = get_file_name(entry_file)
     exit_file_name = get_file_name(exit_file)
+    course_id = input('enter course id:')
     for pre_data in entry_data:
         student_id = pre_data[Constants.ID]  # extract student id
         student_name = pre_data[Constants.NAME]  # extract student name
@@ -330,12 +335,13 @@ def insert_learning_gain(entry_file, exit_file, answers_for_tickets):
         learn_gain_props[Constants.SYM_GAIN_TWO] = sym_gain_two  # properties of learn gain
         learn_gain_props[Constants.WT_GAIN] = wt_gain  # properties of learn gain
         student_props = get_student_props(student_id, student_name)  # get student properties such as name, id
+        course_props = {Constants.ID: course_id}
         try:
             GraphRepo.check_connectivity()  # check database connection
         except Exception as ex:
             logging.exception(ex)
         else:
-            create_student_learn_gain_rel(student_props,
+            create_student_learn_gain_rel(course_props, student_props,
                                           learn_gain_props)  # create student , learn gain and relation between student and learn gain
 
 
@@ -492,12 +498,15 @@ def assessment_input():
     insert_course_instance_assessment_question(ass_file)
 
 
-def create_student_learn_gain_kg_ticket_rel(student_props, learn_gain_props, entry_id, exit_id):
+def create_student_learn_gain_kg_ticket_rel(course_props, student_props, learn_gain_props, entry_id, exit_id):
     create_single_node('Student', student_props)
     if not is_id_exists(entry_id, 'Knowledge_Ticket'):
         print('entry id does not exists in database')
         return
     qb = QueryBuilder()
+    # get student node
+    query_node_0 = qb.match() \
+        .node(labels='Course_Instance', ref_name='c', properties=course_props)
     # get student node
     query_node_1 = qb.match() \
         .node(labels='Student', ref_name='s') \
@@ -509,7 +518,8 @@ def create_student_learn_gain_kg_ticket_rel(student_props, learn_gain_props, ent
         .where('en.' + Constants.ID, Constants.EQUALS,
                entry_id)
     # create relation: knowledge_ticket->session<->learning_outcome
-    query_node_4 = qb.create() \
+    query_node_4 = qb.create().node(ref_name='c') \
+        .related_to(ref_name='hs', label='HAS_STUDENTS') \
         .node(ref_name='s') \
         .related_to(ref_name='rel', label='HAS_LEARN_GAIN') \
         .node(ref_name='l') \
@@ -518,9 +528,8 @@ def create_student_learn_gain_kg_ticket_rel(student_props, learn_gain_props, ent
     # create learn gain node
     query_node_2 = qb.create() \
         .node(labels='Learn_Gain', ref_name='l', properties=learn_gain_props)
-    final_query = query_node_1 + query_node_3 + query_node_2 + query_node_4
+    final_query = query_node_0 + query_node_1 + query_node_3 + query_node_2 + query_node_4
     try:
-        # run query
         GraphRepo.execute_query(final_query)
     except Exception as e:
         logging.exception("An error, %s, occurred while creating a node." % e)
@@ -531,6 +540,7 @@ def insert_learning_gain_new(entry_file, exit_file):
     exit_data = extract_data_from_csv(exit_file)  # parse exit data
     entry_file_name = get_file_name(entry_file)
     exit_file_name = get_file_name(exit_file)
+    course_id = input("enter course id")
     for pre_data in entry_data:
         student_id = pre_data[Constants.ID]  # extract student id
         student_name = pre_data[Constants.NAME]  # extract student name
@@ -551,6 +561,7 @@ def insert_learning_gain_new(entry_file, exit_file):
                             Constants.NORM_GAIN_TWO: norm_gain_two, Constants.SYM_GAIN_TWO: sym_gain_two,
                             Constants.WT_GAIN: wt_gain}
         student_props = get_student_props(student_id, student_name)  # get student properties such as name, id
+        course_props = {Constants.ID: course_id}
         entry_id = create_ticket_id(entry_file_name)
         exit_id = create_ticket_id(exit_file_name)
         print('exit id = ' + exit_id)
@@ -560,7 +571,7 @@ def insert_learning_gain_new(entry_file, exit_file):
         except Exception as ex:
             logging.exception(ex)
         else:
-            create_student_learn_gain_kg_ticket_rel(student_props,
+            create_student_learn_gain_kg_ticket_rel(course_props, student_props,
                                                     learn_gain_props, entry_id,
                                                     exit_id)  # create student , learn gain and relation between student and learn gain
 
@@ -999,16 +1010,7 @@ def measure_student_performance(student):
     return total
 
 
-if __name__ == '__main__':
-    # input_answers_for_tickets()
-    # input_new_learn_gain()
-    # assessment_input()
-    # student_submission_assessment_input()
-    # print(get_feedback('221524', '239120', 'w5b entry'))
-    # input_add_schema_type_to_assessment()
-    # measure_student_performance("240377")
-    generate_plot_one("240377")
-    exit(0)
+def create_entity_and_relations():
     file_path = input('Enter the path of the file- do not enclose path in single/double quotes: ')
     file_name = os.path.basename(file_path)
     file_name, extension = file_name.split(Constants.DOT)
@@ -1031,3 +1033,43 @@ if __name__ == '__main__':
         GraphRepo.close_connections()
     else:
         GraphRepo.close_connections()
+
+
+if __name__ == '__main__':
+    print('1. create entities and relations. Need two entity files and one relation file)')
+    print('2. insert learn gain (old)')
+    print('3. insert learn gain (new)')
+    print('4. create rel ticket->session->outcome. Need entry and exit ticket data')
+    print('5. create course_instance->assessment->question')
+    print('6. create student->submission->assessment. need grades data')
+    print('7. add schema type to assessment')
+    print('8. measure student performance. Need student id as input')
+    print('9. get feedback for a given session. Input: course ID, student ID, session Id. ')
+    print('10. generate scatter plot performance vs student learn gain')
+    option = int(input('choose one of the option above and hit enter:\n'))
+    if option == 1:
+        create_entity_and_relations()
+    elif option == 2:
+        input_learning_gain()
+    elif option == 3:
+        input_new_learn_gain()
+    elif option == 4:
+        input_answers_for_tickets()
+    elif option == 5:
+        assessment_input()
+    elif option == 6:
+        student_submission_assessment_input()
+    elif option == 7:
+        input_add_schema_type_to_assessment()
+    elif option == 8:
+        student_id = input('enter student id')
+        print(measure_student_performance(student_id))
+    elif option == 9:
+        course_instance_id = input('course instance id')
+        student_id = input('enter student id')
+        session_id = input('enter session id. Ex: w5b entry')
+        print(get_feedback(course_instance_id, student_id, session_id))
+    elif option == 10:
+        student_id = input('enter student id')
+        generate_plot_one(student_id)
+
