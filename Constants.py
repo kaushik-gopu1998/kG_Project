@@ -58,7 +58,7 @@ SCORE = 'score'
 QUIZ = 'quiz'
 SECTION = 'section_id'
 COURSE_INSTANCE = 'Course_Instance'
-ASSESSMENT = 'ASSESSMENT'
+ASSESSMENT = 'Assessment'
 STUDENT = 'Student'
 LEARN_GAIN = 'Learn_Gain'
 SESSION_ID = 'entry_id'
@@ -72,3 +72,5 @@ SCORING_SCHEMA = {'Reading': 0.2,
                   'Project': 0.2,
                   'Exam': 0.2,
                   'Misc': 0.1}
+TITLE = 'title'
+EMAIL = 'email'
